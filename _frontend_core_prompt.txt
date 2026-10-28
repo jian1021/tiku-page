@@ -1,0 +1,150 @@
+# 前端核心层（Vue 3 + Vite + PWA）— 子智能体指令
+
+你在 C:\Users\Administrator\Desktop\题库 目录下工作。请创建完整的 Vue 3 前端骨架与公共层（views 页面稍后由另一批指令创建，本批不要创建 src/views 下的业务页面）。所有 UI 文案中文，手机优先。
+
+## 视觉规范（必须严格使用 CSS 变量）
+- 背景 #F3F5F4，文字 #16231F，次要文字 #586763，主色深绿 #0E5A4A，浅绿底 #E3F0EC
+- 真题标签橙红 #B6451A 配 #FDECE4；错误红 #B3261E 配 #FCEBEA；边框 #DDE3E0；高亮 #FFE58A
+- 字体栈：-apple-system, BlinkMacSystemFont, "PingFang SC", "Source Han Sans SC", "Microsoft YaHei", sans-serif
+- 正文不小于 16px；所有可点击元素高度不小于 44px；底部固定栏要适配 env(safe-area-inset-bottom)；夜间模式覆盖变量；骨架屏；图标用内联 SVG，不用 emoji。
+
+## 必须创建的文件
+
+### 1. frontend/package.json
+```json
+{
+  "name": "sichuan-expert-exam-h5",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": { "dev": "vite", "build": "vite build", "preview": "vite preview --port 4173" },
+  "dependencies": {
+    "axios": "^1.7.7",
+    "pinia": "^2.2.4",
+    "vue": "^3.5.12",
+    "vue-router": "^4.4.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.1.4",
+    "vite": "^5.4.10"
+  }
+}
+```
+
+### 2. frontend/vite.config.js
+- 使用 @vitejs/plugin-vue；base 为 "./"；server.port 5173，proxy "/api" → "http://localhost:8000"；build.outDir "dist"；build.assetsDir "assets"。
+
+### 3. frontend/index.html
+- lang=zh-CN；title「专家库入库考试助手」；meta viewport 含 viewport-fit=cover；theme-color #0E5A4A；description；link manifest /manifest.webmanifest；body 内 #app。
+
+### 4. frontend/src/main.js
+- 引入 ./styles/global.css；createApp(App).use(createPinia()).use(router).mount("#app")；注册 service worker（production 或 localhost 均可尝试注册 "/sw.js"，失败静默）。
+
+### 5. frontend/src/App.vue
+- 根元素 `#app-shell`，class 绑定 ui store 的字体档位（`font-small|font-medium|font-large`）与夜间模式（`theme-dark`）。
+- `<router-view />` 外套 `<main class="page">`；底部 TabBar 仅在路由 meta.tab === true 时显示（练习 /、考试 /exam、服务 /service、我的 /me）。
+- 负责在挂载时调用 auth store 的 bootstrap()（有 token 则拉 /me，失败清除）。
+- 监听 ui store 变化，同步到 document.documentElement 的 data-theme 与 data-font。
+
+### 6. frontend/src/styles/global.css
+CSS 变量（含夜间模式）、reset、通用类：
+- `.page`（最大宽度 640px 居中、padding、底部安全区）、`.card`、`.btn` / `.btn-primary` / `.btn-ghost` / `.btn-block` / `.btn-danger`
+- `.tag` / `.tag-year`（橙红）/ `.tag-free` / `.tag-paid` / `.tag-status-*`
+- `.field` / `.input` / `.label` / `.hint` / `.error-text` / `.success-text`
+- `.progress` / `.progress-bar`（深绿进度）
+- `.skeleton`（带 shimmer 动画）
+- `.empty`
+- `.safe-bottom`
+- 夜间模式：`html[data-theme="dark"]` 覆盖变量（背景 #101614、卡片 #18201D、文字 #E9EEEC、次要 #A2B0AB、边框 #2C3733、浅绿底 #17332B、主色 #37B394 等，保证对比度）
+- 字体档位：html[data-font="small"] 基准 16px、medium 18px、large 20px（正文均 ≥16px）。用 CSS 变量 `--fs-base` 驱动 body 字号，组件尽量用 rem/em 或变量。
+
+### 7. frontend/src/router/index.js
+createRouter + createWebHistory；路由如下（component 用动态 import）：
+- `/` Home（meta.tab true, title 练习）
+- `/chapter/:id` Chapter
+- `/quiz` Quiz
+- `/quiz/card` QuizCard
+- `/wrong` Wrong
+- `/favorites` Favorites
+- `/law` LawList
+- `/law/search` LawSearch
+- `/law/:id` LawDetail
+- `/exam` ExamHome（meta.tab true）
+- `/exam/run` ExamRun
+- `/exam/result/:id` ExamResult
+- `/service` Service（meta.tab true）
+- `/me` Me（meta.tab true）
+- `/privacy` Privacy、`/agreement` Agreement（占位页）
+- catch-all 重定向 `/`
+- scrollBehavior 返回顶部；afterEach 设置 document.title = `页面标题 · 专家库入库考试助手`。
+页面文件尚未创建，只写 router 即可（构建时才会报缺文件，本阶段可接受）。注意：`/law/search` 必须放在 `/law/:id` 之前。
+
+### 8. frontend/src/api/client.js
+axios 实例：baseURL "/api"，timeout 15000；请求拦截器附带 `Authorization: Bearer <localStorage sx_token>`；响应拦截器：401 时清除 token 并派发 window 事件 `auth:unauthorized`，错误统一抛出（error.response?.data?.detail 作为 message 挂在 error 上）。导出 `http`。
+
+### 9. frontend/src/api/*.js（按域拆分，导出命名函数）
+- auth.js：register({phone,password,nickname})、login({phone,password})、getMe()、updateSettings(payload)
+- chapters.js：getProvinces()、getChapters(provinceCode)
+- questions.js：getQuestions(params)（chapter_id/mode/year_only/province_code）、submitAnswer(id, selected)、getStats()、getSiteConfig()、sendFeedback(content)
+- wrong.js：getWrong()、removeWrong(questionId)
+- favorites.js：getFavorites(targetType)、addFavorite(targetType, targetId)、removeFavorite(targetType, targetId)
+- laws.js：getLaws(params)、getLaw(id)、searchLaws(q, provinceCode)
+- exams.js：getExamConfig(provinceCode)、startExam(payload)、getExam(id)、saveExamAnswer(id, questionId, selected)、submitExam(id, answers)、getExamResult(id)、getExamHistory()
+- members.js：activate(code)
+
+所有函数返回 `res.data`。
+
+### 10. frontend/src/stores/auth.js（Pinia setup 或 options 均可）
+state：`token`（localStorage "sx_token"）、`user`、`ready`。
+getters：`isLoggedIn`、`isMember`（role==="admin" 或 membership_expires_at 晚于当前时间）、`nickname`、`phone`。
+actions：
+- `bootstrap()`：若 token 存在则 getMe，更新 user；失败 logout；最后 ready=true。无 token 直接 ready=true。
+- `login(payload)` / `register(payload)`：调接口，保存 token 与 user。
+- `logout()`：清 token、user。
+- `refreshMe()`。
+- `updateSettings(payload)`：调接口并更新 user（合并 settings）。
+- 监听 window 的 `auth:unauthorized` 事件自动 logout（在 store 初始化时绑定一次即可）。
+同时暴露 `isMember` 的辅助函数（例如导出 `isMembershipActive(user)`），供非 setup 场景使用。
+
+### 11. frontend/src/stores/ui.js
+state：`theme`（"light"|"dark"）、`fontSize`（"small"|"medium"|"large"）、`provinceCode`（游客本地省份，localStorage "sx_province"）、`provinces`（缓存）。
+actions：
+- `applyToDocument()`：设置 `document.documentElement.dataset.theme / dataset.font` 与 meta theme-color。
+- `setTheme` / `toggleTheme` / `setFontSize`；持久化到 localStorage（sx_theme / sx_font）。
+- `setProvinceCode(code)`：写 localStorage。
+- `loadProvinces()`：调 getProvinces 并缓存。
+- `init()`：读取 localStorage 并 applyToDocument。
+注意：登录用户真实省份以 auth.user.province_code 为准，该 store 只负责游客本地值。
+
+### 12. frontend/src/components/
+- `TabBar.vue`：固定底部，4 个 tab（练习 /、考试 /exam、服务 /service、我的 /me），内联 SVG 图标（练习=书本、考试=试卷/时钟、服务=工具/对话、我的=人像），激活态主色，高度 ≥56px + safe-area，路由高亮用 `router-link-active` 或 path 判断。不要用 emoji。
+- `TopBar.vue`：props `title`、`back`（默认 true）、`rightText`；高 ≥48px，顶部安全区 padding；返回按钮内联 SVG 箭头（router.back()），右侧文字按钮可选；emit("right")。
+- `Skeleton.vue`：props `rows`（默认 3），渲染骨架卡片。
+- `Empty.vue`：props `text`、`sub`，内联 SVG 空状态图标。
+- `ProgressBar.vue`：props `value`（0-100），展示 `progress` 结构。
+- `Modal.vue`：底部弹出式弹层（teleport to body），props `modelValue`、`title`；emit update:modelValue；默认插槽、footer 插槽；遮罩点击关闭；适配安全区。
+- `Toast.vue` 或 `useToast`：简单全局提示。可创建 `src/composables/useToast.js`，导出响应式 message 与 showToast(text, type) 函数；App.vue 内渲染。
+- `icons.js`：集中定义需要的 SVG path 字符串（书、卷、服务、用户、搜索、返回、收藏、勾、叉、电话、微信、箭头等），组件可复用。
+
+### 13. frontend/public/manifest.webmanifest
+name「专家库入库考试助手」，short_name「入库考试」，start_url "./"，scope "./"，display "standalone"，background_color "#F3F5F4"，theme_color "#0E5A4A"，lang "zh-CN"，icons 使用 `/icon.svg`（sizes "any"，type "image/svg+xml"，purpose "any"）。
+
+### 14. frontend/public/icon.svg
+简洁的深绿圆角方形 + 白色「考」或书本图形，纯 SVG。
+
+### 15. frontend/public/sw.js
+手写 service worker：
+- install：skipWaiting；activate：clients.claim，清理旧缓存。
+- fetch：只处理 GET、同源请求；`/api/` 请求不缓存（直接 fetch）；其余静态资源用 stale-while-revalidate（先返回缓存，同时后台更新）；导航请求失败时回退到缓存的 "/"。
+- 明确注释：答案与解析不进入缓存（因为接口不返回答案，且 /api 不缓存）。
+- 不缓存非 GET。
+
+### 16. frontend/src/env.d.ts
+`/// <reference types="vite/client" />` 与 .vue 模块声明。
+
+## 约束
+- 不创建 src/views 业务页面文件；不创建 backend/admin 文件。
+- 组件与 store 命名、导出函数必须与上文一致，供后续页面直接使用。
+- 图标全部内联 SVG。
+- 完成后不要运行 npm install（环境可能慢），但要保证语法正确。
+- 回复：创建的文件清单与关键约定（store 方法名、api 函数名、CSS 变量名）。

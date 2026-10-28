@@ -1,0 +1,7 @@
+node_modules
+dist
+dist-verify
+.tmp
+*.log
+.DS_Store
+.vite

@@ -1,0 +1,20 @@
+{
+  "name": "专家库入库考试助手",
+  "short_name": "入库考试",
+  "description": "四川省评标专家库入库考试练习助手：章节练习、错题本、模拟考试与法规查询。",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F3F5F4",
+  "theme_color": "#0E5A4A",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+# Streamlit 管理后台 — 子智能体指令
+
+你在 C:\Users\Administrator\Desktop\题库 目录下工作。后端核心层与模型已存在（backend/app/models.py 等）。请创建管理后台目录 `/admin`，直接连接同一个数据库（默认 SQLite，支持环境变量 DATABASE_URL 连 MySQL）。请先阅读 backend/app/models.py 与 backend/app/config.py。
+
+## 文件
+1. `admin/requirements.txt`：
+```
+streamlit==1.39.0
+pandas==2.2.3
+openpyxl==3.1.5
+sqlalchemy==2.0.36
+pymysql==1.1.1
+python-dotenv==1.0.1
+```
+2. `admin/app.py`：完整 Streamlit 单文件应用。
+3. `admin/README.md`：启动方式、默认管理员、功能说明、Excel/CSV 模板列说明。
+
+## 连接数据库
+- `DATABASE_URL` 环境变量优先，默认 `sqlite:///C:/Users/Administrator/Desktop/题库/backend/data/app.db`？**不要写死 Windows 绝对路径**。请使用相对 `backend/data/app.db` 并基于 `admin/` 目录向上找：`Path(__file__).resolve().parent.parent / "backend" / "data" / "app.db"`，sqlite URL 用 `sqlite:///{path}`。支持 env 覆盖（MySQL 用 `mysql+pymysql://...`）。
+- 导入 `sys.path` 以复用 `backend/app/models.py`：把项目根加入 path，然后 `from backend.app.models import ...` 需要 `backend/__init__.py` 存在——若不存在则用 importlib 加载 models 文件，或直接在本文件用 SQLAlchemy Core + 反射（推荐用 `sqlalchemy.automap` 或 `Table(...)` 反射，简单可靠）。推荐直接 `MetaData().reflect(bind=engine)` 后用 `select`/`insert`/`update` 操作，避免包路径问题。
+- 表名：users, chapters, questions, law_documents, law_articles, activation_codes, memberships, answer_records, wrong_questions, favorites, exams, exam_configs, site_configs, feedbacks。
+
+## 登录
+- 简单管理员登录：账号/密码从环境变量 `ADMIN_USER` / `ADMIN_PASSWORD` 读取，默认 `admin` / `admin123`；session_state 记住登录。
+- 登录后侧边栏导航：数据概览、题目管理、法规管理、激活码、用户管理、配置管理、意见反馈。
+
+## 功能要求
+### 数据概览
+- st.metric：注册用户数、已发布题目数、答题记录数、会员数（memberships 未过期）、考试数。
+- 各章节正确率表格（answer_records join questions 按 chapter 统计 正确数/总数/正确率）。
+
+### 题目管理
+- Excel 批量导入：st.file_uploader 支持 .xlsx；本地预览 st.dataframe（前 50 行）；校验并列出错误行（省份/章节/题型/题干/选项/答案/是否免费 等必填项；题型只能是 single/multi/judge；答案必须能在选项里找到；多选用逗号分隔）。
+- 列名严格约定：省份、章节、题型、题干、选项A、选项B、选项C、选项D、选项E、选项F、答案、解析、难度、真题年份、来源说明、关联条文、是否免费
+  - 省份填中文省份名或省份代码均可（建立映射：四川省→SC 等，至少支持 SC/BJ/SH/GD；全国通用为 national）。
+  - 章节按「省份 + 章节名」查找 chapters 表；找不到时给出错误提示（可选自动创建，但必须提示）。
+  - 选项列可以为空；判断题选项留空时自动生成 A 正确 / B 错误。
+  - 答案支持「A」「AB」「A,B」等；多选按字母拆分为 ["A","B"]。
+  - 是否免费：是/否、TRUE/FALSE、1/0 均可。
+- 确认后写入 questions（status 默认 published），显示导入成功数量。
+- 单题编辑：输入题目 ID 加载，编辑题干/选项/答案/解析/是否免费/状态，保存。
+- 发布与下架：按 ID 或批量把 status 改为 published/draft。
+
+### 法规管理
+- Excel/CSV 按条导入，列：省份（全国通用填 national）、法规名称、分类、发文单位、发布日期、修订日期、效力状态、条号、条文内容。
+  - 分类限定：国家法律、行政法规、部门规章、地方规定。
+  - 效力状态支持中文（现行有效/已废止/已修订）与英文（effective/repealed/revised）。
+  - 同一法规名称+省份视为同一文档；不存在则创建 law_documents，再逐条插入 law_articles（article_no + content + sort_order 递增）。
+  - 导入前预览与错误提示。
+- 法规列表：展示文档、条数、状态，可改状态（下架用 repealed？不做删除，允许改状态）。
+
+### 激活码
+- 批量生成：数量、有效天数、可选备注、自定义前缀；生成随机码（大写字母+数字，长度 ≥ 10，避免歧义字符）；写入 activation_codes（status=unused）；结果可下载 CSV。
+- 列表/筛选状态；禁用（disabled）与恢复（unused）操作。
+- 显示已使用者与使用时间。
+
+### 用户管理
+- 用户列表：id、手机号、昵称、省份、角色、注册时间、会员到期时间。
+- 手动开通/延长会员：输入用户手机号与天数，upsert memberships（未过期则叠加，否则从现在起）。
+- 可查看用户做题数、正确率、错题数。
+- 重置密码（输入新密码，用 passlib bcrypt，与后端一致）——可选，若实现需与后端哈希兼容（passlib CryptContext）。
+
+### 配置管理
+- 按省份编辑 exam_config：question_count、duration_minutes、pass_score、total_score、type_distribution（JSON 文本）。保存时 upsert（province_code + key 唯一）。
+- site_config 键值编辑：至少 service_phone、service_wechat、service_intro；支持新增自定义键。
+- 明确提示：「[待定] 数值由管理员填写，系统不预置正式值」。
+
+### 意见反馈
+- 列出 feedbacks（内容、用户、时间）。
+
+## 其他
+- 所有数据库操作使用 SQLAlchemy Core/反射，注意 JSON 字段在 SQLite 中以 TEXT 存储：读取题目 options/answer 时用 json.loads（若为字符串），写入时 json.dumps(ensure_ascii=False)。
+- 日期字段兼容字符串与 date。
+- 页面中文；错误用 st.error / st.warning；不要用 emoji 作为图标（Streamlit 默认图标可用）。
+- 不修改 backend 或 frontend 文件。
+- 不运行 streamlit。
+- 完成后回复文件清单、默认登录信息、Excel 列约定、注意事项。

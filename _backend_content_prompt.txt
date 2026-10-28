@@ -1,0 +1,119 @@
+# 后端业务接口 + 种子数据 — 子智能体指令
+
+你在 C:\Users\Administrator\Desktop\题库 目录下工作。后端核心层已经存在（backend/app/{config,database,models,auth,deps,main}.py 与 routers/{auth,chapters}.py）。请先完整阅读这些文件，理解现有模型、依赖与代码风格，然后创建以下文件。不要修改已有文件（除非发现明显 bug 且必要，改动需最小化）。
+
+## 必须创建的文件
+
+### 1. backend/app/serializers.py
+提供两个函数：
+- `question_public(q, chapter_name=None, is_favorited=False) -> dict`：返回 id, province_code, chapter_id, chapter_name, type, stem, options, difficulty, year, source_note, is_free, is_favorited。**绝对不能包含 answer / explanation 字段。**
+- `question_with_answer(q, chapter_name=None, is_favorited=False) -> dict`：在上面的基础上增加 `correct_answer`（即 q.answer）与 `explanation`。
+
+options 统一为 `[{"key":"A","text":"..."}]` 结构（种子与导入均按此格式）。answer 统一为 key 数组，如 `["A"]`。
+
+### 2. backend/app/ratelimit.py
+简单的进程内滑动窗口限流工具：
+- `check_rate_limit(key: str, limit: int, window_sec: int)` → 超限抛 `HTTPException(429, "操作过于频繁，请稍后再试")`。
+- `record_failure(key, limit, window_sec)` 计数用于激活码失败限频（可复用同一字典）。
+- 使用 threading.Lock 保证线程安全。
+
+### 3. backend/app/routers/questions.py
+- `GET /questions`，参数：`chapter_id: int | None`、`mode: str | None`（practice/random）、`year_only: bool = False`、`province_code: str | None`、`request: Request`。
+  - 省份：优先 query，其次当前用户 province_code；都没有 → 400 "请先选择省份"。
+  - 只取 status=="published"；非会员（未登录或会员过期）只能取 is_free==True（管理员视为会员）。
+  - chapter_id 存在时包含其所有子孙章节的题目（递归章节树）。
+  - year_only 为 true 时只取 year 非空且不为空的题目。
+  - mode=="random" 时在 Python 内 random.shuffle。
+  - 限流：用户已登录用 `q:{user.id}`，否则用 `ip:{client.host}`，60 秒内最多 120 次。
+  - 排序：章节 sort_order、题目 id。
+  - 返回 `{"items":[{...question_public...}], "count": n}`，并为登录用户标记 is_favorited。
+  - 不返回 answer / explanation。
+- `POST /questions/{id}/answer`，body `{"selected": ["A"], "mode": "practice"}`（mode 固定 practice）：
+  - 题目不存在/非 published → 404。
+  - 非会员且题目 is_free==False → 403 {"detail":"该题目为会员专享，请先激活会员"}。
+  - selected 必须是合法选项 key 列表（否则 400）。判分：单选/判断与多选均按集合完全相等。
+  - 登录用户：写 AnswerRecord(mode="practice")；答错时 upsert WrongQuestion（wrong_count+1、last_wrong_at=now、removed=False）。
+  - 游客可判分但不落库。
+  - 返回 `{"question_id", "is_correct", "selected", "correct_answer": q.answer, "explanation": q.explanation, "chapter_name"}`。
+
+### 4. backend/app/routers/wrong_favorites.py
+- `GET /wrong`（必须登录）→ 取 removed==False 的错题，联表 Question/Chapter，按章节 sort_order、题目 id 排序。返回 `{"total": n, "groups":[{"chapter_id","chapter_name","items":[{"question": {...}, "wrong_count", "last_wrong_at"}]}]}`。
+- `DELETE /wrong/{question_id}`（登录）→ 将记录 removed 置 True（不存在 404）→ `{"ok": true}`。
+- `GET /favorites?target_type=`（登录）→ 返回 `{"items": [...]}`：
+  - target_type 为空表示全部；question 条目带 `question`（public，不含答案）；law_article 条目带 `law_article`（id, article_no, chapter_title, content）与 `law_document`（id, title, status, category）。
+- `POST /favorites` body `{"target_type":"question|law_article","target_id":"12"}`（登录）→ 校验目标存在；已存在则幂等返回 `{"ok": true, "created": false}`，否则创建返回 created=true。target_type 非法 → 400。
+- `DELETE /favorites/{target_type}/{target_id}`（登录）→ 删除 → `{"ok": true}`。
+
+### 5. backend/app/routers/laws.py
+- `GET /laws`，参数 province_code/category/status 均可选。可见范围：province_code 匹配（若传）或 national；category/status 精确筛选。返回 `{"items":[{"id","title","category","issuer","publish_date","revise_date","status","province_code","article_count"}]}`，排序：现行有效 → 已修订 → 已废止，再按 id。
+- `GET /laws/{id}` → `{"document": {...}, "articles": [{"id","article_no","chapter_title","content","sort_order","is_favorited"}]}`；条文按 sort_order、id；登录用户标记 is_favorited。
+- `GET /laws/search`，参数 `q`（必填，至少 1 字符）、`province_code` 可选。
+  - 在 law_articles.content 或 law_documents.title 中模糊匹配（用 lower() + like；中文不受影响）。
+  - 可见范围同 /laws；排序现行有效优先，其次文档 id、条文 sort_order。
+  - 返回 `{"q": q, "total": n, "hits":[{"document": {...}, "article": {...}, "positions": [命中起始下标...], "title_hit": bool}]}`。
+  - positions 为 q 在 article.content 中出现的所有下标（大小写不敏感，用 lower 扫描）。
+
+### 6. backend/app/routers/members.py
+- `POST /activate` body `{"code": "xxx"}`（必须登录）：
+  - 去空格；不存在 → 404 "激活码不存在"；status=="disabled" → 400 "激活码已被禁用"；status=="used" → 400 "激活码已被使用"；duration_days <= 0 → 400 "激活码配置有误"。
+  - 会员叠加：现有 membership 且未过期则从 expires_at 起加 duration_days 天，否则从现在起加；创建或更新 memberships。
+  - 激活码置 used、used_by、used_at。
+  - 返回 `{"ok": true, "expires_at": iso, "duration_days": n}`。
+  - 失败限频：按 `activate_fail:{user.id}:{ip}`，10 分钟窗口最多 5 次失败，超限 429 "尝试次数过多，请稍后再试"；成功则清空。
+
+### 7. backend/app/routers/exams.py
+所有考试接口必须登录；start 与答题/交卷/结果/历史都必须是本人数据。非会员 start 返回 403 "模拟考试仅会员可参加"。
+
+- `GET /exam/config?province_code=SC`：读取 exam_config 表。返回：
+  `{"province_code","question_count","duration_minutes","pass_score","total_score","type_distribution","configured","available_questions","user_settings"}`。
+  - 数值键解析为 int/float，type_distribution 解析 JSON，缺失/空串返回 null。configured 表示 question_count、duration_minutes、pass_score、total_score 是否齐全。
+  - available_questions 为该省 published 题目数（不含访问过滤）。
+  - user_settings 取当前用户 users.settings 中的 exam_question_count / exam_duration_minutes（未登录为 null）。
+- `POST /exam/start` body `{"question_count"?: int, "duration_minutes"?: int}`：
+  - 必须是有效会员（admin 放行）。
+  - 取该省全部 published 题目；若为空 400 "该省份暂无可用题目"。
+  - 题量：body → 用户设置 exam_question_count → exam_config；时长为 body → 用户设置 exam_duration_minutes → exam_config。题量/时长缺失 → 400 "管理员尚未配置本省考试参数"。
+  - 题量取 min(请求值, 可用题目数)，若取整后 < 1 → 400；时长必须 > 0。
+  - 随机抽题（random.sample），创建 Exam（started_at=now、duration_limit_sec、total、question_ids、answers={}、score=None、passed=False）。
+  - 返回 `{"id","started_at","duration_limit_sec","total","server_time","pass_score","total_score","questions":[public 题目...]}`。
+- `GET /exam/{id}`（补充接口，用于断网恢复）：本人；返回 exam 基本信息、remaining_seconds（不小于 0）、answers、questions（未交卷时返回题目，已交卷也可返回）、server_time；超时自动交卷。
+- `POST /exam/{id}/answer` body `{"question_id": int, "selected": [...]}`：本人、未交卷；写入 answers[str(question_id)]；若已超时先自动交卷并返回 `{"auto_submitted": true}`；正常返回 `{"saved": true, "answered": n, "total": total}`。
+- `POST /exam/{id}/submit` body `{"answers"?: {"qid": ["A"]}}`：本人；已交卷则幂等返回成绩摘要。合并 answers 后判分：
+  - 正确数 / total * total_score，保留 1 位小数；passed = score >= pass_score。
+  - 超时交卷时 submitted_at 取 started_at + duration_limit_sec，否则 now。
+  - 为每道已作答题写 AnswerRecord(mode="exam")；答错的 upsert 错题本。
+  - 返回 `{"id","score","passed","total","total_score","pass_score","used_seconds","submitted_at"}`。
+- `GET /exam/{id}/result`：本人；未交卷且超时 → 自动交卷；仍未交卷 → 400 "考试尚未交卷"。返回：
+  `{"exam": {"id","score","passed","total","started_at","submitted_at","used_seconds","duration_limit_sec","pass_score","total_score"}, "chapters":[{"chapter_id","chapter_name","total","correct","accuracy"}], "wrong_items":[{"question": {...含 correct_answer 与 explanation...}, "selected": [...]}]}`。
+- `GET /exam/history`：本人已交卷考试，按 started_at 倒序，返回 `{"items":[{"id","started_at","submitted_at","score","passed","total","used_seconds","duration_limit_sec"}]}`。
+
+注意：超时自动交卷统一走内部 `_grade_exam` 辅助函数；auto submit 的时间与成绩规则同上。
+
+### 8. backend/app/routers/site.py
+- `GET /site-config`：返回所有 site_config 的 key→value 字典（缺失的 service_phone / service_wechat / service_intro 返回 ""）。
+- `POST /feedback` body `{"content": str}`（登录可选）：1~1024 字，写入 feedbacks，返回 `{"ok": true}`。
+- `GET /stats`（登录可选）：返回当前用户 `{"answered_count","correct_count","correct_rate","wrong_count","favorite_count","exam_count","membership_expires_at"}`；未登录全部为 0 / null。
+
+### 9. backend/seed.py
+可重复执行（幂等）的种子脚本，`python -m app.seed`（在 backend 目录）即可运行。写入：
+- 管理员账号：phone `admin`，密码 `admin123`，role `admin`，nickname `系统管理员`。
+- 测试账号：`13800138000` / `test1234`（未激活，province_code=SC）；`13900139000` / `test1234`（已开通 30 天会员，province_code=SC）。
+- 四川省章节（province_code=SC）：第一章 政府采购基础（含 第一节 基本概念、第二节 采购方式）；第二章 政府采购实务（含 第一节 程序与文件、第二节 评审与监督）。sort_order 依次递增。
+- 8~10 道示例题，分布到各节，混合 single/multi/judge；其中 2~3 道 is_free=True；全部 status="published"，source_note="示例题目，仅用于系统联调，不代表真实考试内容"，year 留空；解析统一写明"本题为系统示例题目，仅用于功能联调，不代表真实考试内容。"
+- 3 部示例法规（province_code 分别 national/SC/national）：
+  - 标题必须带「示例」字样，例如《示例：政府采购法（联调数据）》，category 分别使用「国家法律」「地方规定」「行政法规」，status 分别 effective/repealed/revised，issuer "示例单位"，publish_date 可为 null。
+  - 每部 2~4 条，内容必须明确是占位示例（如「【示例条文】本条为系统联调占位内容，非真实法规条文。」），不得写真实法条内容。
+- 激活码：`DEMO-30D-0001`（30 天，unused）、`DEMO-7D-0001`（7 天，unused）、`DEMO-DISABLED`（disabled），note="示例激活码"。
+- site_config：service_phone=""、service_wechat=""、service_intro="标书审查与招标文件咨询服务（示例介绍，请管理员在后台配置正式内容）。"
+- exam_config（省份 SC，键 question_count/duration_minutes/pass_score/total_score/type_distribution）使用**占位示例值** 20 / 120 / 60 / 100 / {"single": 10, "multi": 4, "judge": 6}，并在脚本注释与 README 中注明这些是待管理员确认的占位值。
+- 不要把 seed 挂到应用启动事件里，避免自动写入。
+
+## 通用要求
+- 使用 Pydantic v2 BaseModel 定义请求体。
+- 所有错误用 HTTPException，中文 detail。
+- 日期统一 isoformat 字符串返回。
+- 代码注释中文，遵循已有文件风格。
+- 只写上述文件，不修改 frontend/admin。
+- 完成后不要运行服务；可以用 `python -m py_compile` 检查语法（如果环境可用）。
+
+完成后回复：创建的文件清单、关键接口返回结构、seed 的测试账号和示例激活码。

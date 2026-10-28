@@ -1,0 +1,9 @@
+# 题库导入 / 文档解析等运维脚本依赖（非 Web 运行时必需）
+# 说明：这些库在部分 Python 版本上需要编译，按需安装：
+#   pip install -r requirements-tools.txt
+pandas>=2.2
+openpyxl>=3.1
+xlrd>=2.0
+pdfplumber>=0.10
+python-docx>=1.1
+jieba>=0.42

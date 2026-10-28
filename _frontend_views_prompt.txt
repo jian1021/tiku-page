@@ -1,0 +1,128 @@
+# 前端业务页面（全量视图）— 子智能体指令
+
+你在 C:\Users\Administrator\Desktop\题库 目录下工作。
+前端核心层（路由、API、Pinia、组件、样式、PWA）已就绪。现在请严格按《四川专家库入库考试助手（H5）开发说明》实现全部业务页面。
+
+## 前提
+- 只修改 frontend/src/views/ 下的文件（可新增、可覆盖占位文件）。不要改动 router、api、stores、components、main.js、App.vue、样式、public。
+- 必须复用已存在的东西：
+  - stores: useAuthStore、useUiStore（及 isMembershipActive）
+  - api: auth/chapters/questions/wrong/favorites/laws/exams/members
+  - components: TabBar、TopBar、Skeleton、Empty、ProgressBar、Modal、Toast/useToast
+  - 全局样式变量（颜色、字体、safe-area 等）
+- 图标全部用内联 SVG，不用 emoji。
+- 移动端优先，适配刘海屏与底部安全区，所有可点击元素 >=44px。
+- 遵循：答案不随题目列表下发，只有提交后才显示；非会员付费题 403；错题自动收录；模拟考试服务端计时概念（用后端返回的 server_time/duration_limit_sec 计算倒计时）。
+- 夜间模式、字号设置走 ui store，已在 App.vue 生效。
+- 所有文案中文，符合合规（不要"保过""内部真题"）。
+
+## 需要实现的页面
+
+### 1. src/views/Home.vue（练习首页，底部 tab）
+顶部：法规搜索入口（跳转 /law/search?q= 或 /law 搜索框）、省份选择器（点击弹出 Modal 选择省份，列表用 getProvinces，当前用 ui.provinceCode 或 auth.user.province_code；游客选择后调用 ui.setProvinceCode 并保存；登录用户可切换省份时调用 auth.updateSettings({province_code: code})）。
+游客激活提示条：未登录且非会员时显示「登录/激活后可使用全部题库」跳转 /me。
+四个入口（grid）：顺序练习、随机练习、错题本、只看真题，各显示题数。
+- 顺序练习：跳转 /quiz?mode=practice&order=chapter
+- 随机练习：跳转 /quiz?mode=random
+- 错题本：跳转 /wrong
+- 只看真题：跳转 /quiz?mode=practice&year_only=true
+题数从 chapters 列表汇总或从 questions/stats 获取，优先用 /chapters 返回的题量。
+
+章节列表：按章节树渲染，每章显示名称、进度条（已做/总数）、已做/总数文案。点击章节跳转 /chapter/:id。
+
+首次进入若无省份（游客无 sx_province 且无 user.province_code）需强制弹出省份选择（不可跳过）。
+
+### 2. src/views/Chapter.vue（章节节列表）
+顶部 TopBar 标题「章节练习」。加载 GET /chapters?province_code=... 获取树，找到当前章节（根据 route.params.id）及其子章节（节）。显示节列表，每项显示节名和题数。点击跳转 /quiz?chapter_id=xxx&mode=practice。
+
+### 3. src/views/Quiz.vue（做题页，核心）
+参数：chapter_id/mode/year_only 等透传到 GET /questions。
+顶部：返回、章节名（可显示当前题所属章节）、答题卡入口（跳转 /quiz/card?from=quiz&... 保留当前上下文）。
+进度：当前题号/总题数。
+题目卡片：真题年份标签（有 year 显示「真题 · YYYY」橙红）、题型标签（单选/多选/判断）、题干。
+选项：单选用 radio 样式，判断单选，多选用 checkbox。选项 key 显示 A、B、C...
+底部固定栏：收藏按钮（切换 favorites add/remove，target_type='question', target_id=题目id）、上一题、下一题。
+交互：
+- 选择选项后立即判分：调用 POST /questions/{id}/answer {selected:[...], mode:'practice'}。
+- 判分后：错误选项标红并显示「你的答案：X」，正确选项标绿并显示「正确答案：X」。必须同时用文字标注，不能只靠颜色。
+- 显示解析区域（explanation）。
+- 已判分的题目不可再改选（禁用选项）。
+- 支持左右滑动切题（用 touchstart/touchend 简单实现，阈值 50px）。
+- 多选需选完后点「确定」再判分（或选项变化后需点击提交）——按实际体验：多选题选择后显示「提交答案」按钮，点击后判分。
+- 加载时用 Skeleton。
+- 会员/免费限制：若接口返回 403 显示提示并引导去 /me 激活。
+- 收藏状态需根据接口返回或本地同步。
+
+### 4. src/views/QuizCard.vue（答题卡）
+网格显示题号。状态用不同样式：已做、对、错、未做。点击题号跳转回 /quiz 并定位到该题（用 query index 或 id）。
+顶部返回。
+
+### 5. src/views/Wrong.vue（错题本）
+按章节分组（用 GET /wrong 返回的 groups）。每组可展开/收起。题目卡片显示题干、错题次数、上次错题时间。操作：重做（跳转 /quiz?wrong_mode=1&question_id=... 或直接加载该题列表）、做对后可移出（DELETE /wrong/{question_id}，成功后刷新）。
+空状态用 Empty。
+
+### 6. src/views/Favorites.vue（收藏）
+顶部 Tab：题目收藏 / 法规条文收藏。
+题目：列表，点击跳转 /quiz?favorite_id=... 或显示题目详情并可去答题。
+法规条文：显示条文内容、所属法规名称，点击跳转 /law/:document_id 并定位到该条（用 query article_id）。
+
+### 7. src/views/LawList.vue（法规库）
+顶部搜索框（跳转 /law/search）。分类筛选（国家法律、行政法规、部门规章、地方规定）。效力状态筛选（现行有效、已修订、已废止）。列表显示标题、分类、效力状态标签（已废止标灰并排后显示）。点击跳转 /law/:id。
+
+### 8. src/views/LawDetail.vue（法规详情）
+顶部 TopBar 标题法规名称。显示效力状态、发文单位、发布日期、修订日期。目录（articles 按 sort_order，点击跳转到对应锚点）。正文按条排列，每条显示条号、章节标题（如有）、内容。条文可收藏（切换 favorites target_type='law_article' target_id=article.id）。滚动时高亮当前目录项。
+
+### 9. src/views/LawSearch.vue（法规搜索）
+搜索框保留关键词（从 query.q 读取）。调用 GET /laws/search?q=...。显示匹配数。每个结果是条文卡片，关键词用黄色背景高亮（用 <mark> 或 span，类名 .highlight）。底部固定栏「第 x / N 处」，上一处、下一处（在当前页面所有命中之间切换高亮位置）。点击卡片跳转 /law/:document.id?article_id=:article.id&pos=:index。
+
+### 10. src/views/ExamHome.vue（考试首页）
+显示全真模拟卡片（题量、时长、及格线、题型构成，从 /exam/config 获取，若未配置显示 [待定] 或占位）。
+考试设置区（可调整题量、时长，范围从配置推断或直接输入，选定后调用 auth.updateSettings 保存 exam_question_count/exam_duration_minutes 作为下次默认）。
+开始按钮：调用 POST /exam/start，成功后跳转 /exam/run?id=xxx。
+历史成绩列表（GET /exam/history），点击跳转 /exam/result/:id。
+
+### 11. src/views/ExamRun.vue（考试进行中）
+倒计时（用 started_at + duration_limit_sec 与 server_time 计算，setInterval 每秒更新，<60秒红色警示）。
+不显示对错。
+可标记待检查（本地存储 answered 标记）。
+答题卡（Modal）。
+交卷前二次确认 Modal。
+剩余 0 或手动交卷：调用 POST /exam/submit。提交时将本地 answers 整理成后端格式。
+断网恢复：进入时可调用 GET /exam/:id 获取状态，恢复倒计时和已答题。
+支持左右滑动切题。
+离开页面提示（beforeunload）但考试进行中需谨慎处理。
+
+### 12. src/views/ExamResult.vue（成绩报告）
+得分、是否及格、用时。各章节正确率柱状或列表。错题列表（点击可查看题目详情，含正确答案和解析，可加入错题本）。返回首页或重新考试。
+
+### 13. src/views/Service.vue（服务页）
+标书审查、招标文件咨询介绍卡片。质疑函编写卡片标注「即将上线」（点击提示或禁用）。底部固定「拨打电话」「微信咨询」，从 /site-config 获取 service_phone、service_wechat，点击分别用 tel: 和提示复制微信号。
+
+### 14. src/views/Me.vue（我的）
+头像（默认首字母）、昵称、当前省份、切换省份。激活码卡片（输入框、激活按钮，调用 POST /activate，成功提示并刷新用户信息）。学习统计（GET /stats）。入口：我的收藏、错题本、意见反馈（弹出 Modal 输入）、隐私政策、用户协议。字号设置（小/中/大，调用 ui.setFontSize）。夜间模式开关（ui.toggleTheme）。登录/注册入口（未登录时显示）。
+
+### 15. src/views/Privacy.vue、Agreement.vue（占位页）
+简短占位内容，符合合规要求。
+
+## 通用实现要求
+- 使用 Composition API。
+- 数据获取用 async/await，加载用 Skeleton。
+- 错误用 Toast 提示（useToast）。
+- 表单校验必要的必填项。
+- 所有跳转用 router.push/replace。
+- 列表空状态用 Empty。
+- 按钮禁用状态明确。
+- 不缓存答案/解析到 localStorage（只缓存作答进度如 exam answers 本地备份）。
+- 法规搜索高亮要转义正则特殊字符。
+- 题目类型展示文案：「单选题」「多选题」「判断题」。
+- 进度条用 ProgressBar 组件。
+- Modal 用于省份选择、答题卡、交卷确认、意见反馈等。
+- 答题页要考虑键盘弹出不遮挡（viewport 已配置）。
+
+## 完成标准
+- 所有视图文件都存在且能被 router 正确加载。
+- 核心流程可走通：选省份→练习→做题判分→错题本→收藏→法规搜索高亮→模拟考试计时交卷→成绩报告。
+- 不引入新依赖。
+- 构建前确保无语法错误。
+
+完成后回复：实现的视图清单、核心交互要点、测试建议（用 seed 账号）。

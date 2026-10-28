@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="专家库入库考试助手">
+  <rect width="512" height="512" rx="112" ry="112" fill="#0E5A4A" />
+  <path d="M256 176c-36-24-78-36-124-36v202c46 0 88 12 124 36z" fill="#FFFFFF" />
+  <path d="M256 176c36-24 78-36 124-36v202c-46 0-88 12-124 36z" fill="#E3F0EC" />
+  <path d="M256 176v202" fill="none" stroke="#0E5A4A" stroke-width="12" stroke-linecap="round" />
+  <g fill="none" stroke="#0E5A4A" stroke-width="10" stroke-linecap="round" opacity="0.45">
+    <path d="M168 214c16 1 31 5 45 12" />
+    <path d="M168 254c16 1 31 5 45 12" />
+    <path d="M168 294c16 1 31 5 45 12" />
+    <path d="M299 226c14-7 29-11 45-12" />
+    <path d="M299 266c14-7 29-11 45-12" />
+    <path d="M299 306c14-7 29-11 45-12" />
+  </g>
+</svg>

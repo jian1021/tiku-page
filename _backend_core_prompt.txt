@@ -1,0 +1,70 @@
+# 后端核心层搭建 — 子智能体指令
+
+你正在 C:\Users\Administrator\Desktop\题库 目录下工作。目标：搭建 Python FastAPI 后端核心层（第一阶段）。
+
+## 严格要求
+1. backend/requirements.txt — 内容为：
+```
+fastapi==0.115.0
+uvicorn[standard]==0.30.1
+sqlalchemy==2.0.36
+pydantic==2.7.1
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+python-multipart==0.0.9
+python-dotenv==1.0.1
+```
+
+2. backend/app/__init__.py — 空文件
+
+3. backend/app/config.py — 使用 pydantic BaseSettings 的类 Settings，字段：
+- DATABASE_URL: str = "sqlite:///./data/app.db"
+- SECRET_KEY: str = "dev-secret-change-me"
+- ALGORITHM: str = "HS256"
+- ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080
+- CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:4173", "http://localhost:8080", "http://localhost"]
+
+4. backend/app/database.py — SQLAlchemy 引擎配置（sqlite 需 connect_args check_same_thread False），SessionLocal，Base = declarative_base()，get_db FastAPI dependency。
+
+5. backend/app/models.py — 按以下 SQLAlchemy 模型编写（必须兼容 SQLite 与 MySQL；JSON 字段用 sa.JSON；日期用 DateTime）：
+- User(id PK自增, phone String(32) unique not null, password_hash String(255) not null, nickname String(64) nullable, province_code String(16) nullable, settings JSON nullable, role String(16) default "user", created_at DateTime default func.now())
+- Chapter(id PK自增, name String(128) not null, parent_id Integer nullable FK self.id, province_code String(16) not null, sort_order Integer default 0, UniqueConstraint province_code+parent_id+name)
+- Question(id PK自增, province_code String(16) not null, chapter_id Integer FK Chapter.id, type String(16) not null（single/multi/judge）, stem Text not null, options JSON nullable, answer JSON nullable, explanation Text nullable, difficulty String(16) default "medium", year String(16) nullable, source_note Text nullable, law_article_ids JSON nullable, is_free Boolean default False, status String(16) default "published", created_at DateTime default func.now())
+- LawDocument(id PK自增, province_code String(16) default "national", title String(255) not null, category String(32) not null, issuer String(255) nullable, publish_date Date nullable, revise_date Date nullable, status String(16) default "effective"（effective/repealed/revised）)
+- LawArticle(id PK自增, document_id Integer FK LawDocument.id, article_no String(32) not null, chapter_title String(128) nullable, content Text not null, sort_order Integer default 0)
+- ActivationCode(id PK自增, code String(64) unique not null, duration_days Integer not null, status String(16) default "unused", used_by Integer nullable FK User, used_at DateTime nullable, created_at DateTime default func.now(), note Text nullable)
+- Membership(id PK自增, user_id Integer unique FK User.id, expires_at DateTime not null)
+- AnswerRecord(id PK自增, user_id Integer FK, question_id Integer FK, selected JSON nullable, is_correct Boolean, mode String(16) default "practice", created_at DateTime default func.now())
+- WrongQuestion(id PK自增, user_id Integer FK, question_id Integer FK, wrong_count Integer default 1, last_wrong_at DateTime default func.now(), removed Boolean default False, UniqueConstraint user_id+question_id)
+- Favorite(id PK自增, user_id Integer FK, target_type String(16) not null, target_id String(64) not null, UniqueConstraint user_id+target_type+target_id)
+- Exam(id PK自增, user_id Integer FK, started_at DateTime not null, submitted_at DateTime nullable, duration_limit_sec Integer not null, total Integer not null, score Float nullable, passed Boolean default False, question_ids JSON not null, answers JSON not null)
+- ExamConfig(id PK自增, province_code String(16) not null, key String(64) not null, value String(64) not null)
+- SiteConfig(id PK自增, key String(64) unique not null, value Text not null)
+- Feedback(id PK自增, user_id Integer nullable FK, content String(1024) not null, created_at DateTime default func.now())
+
+6. backend/app/auth.py — passlib CryptContext(schemes=["bcrypt"], deprecated="auto")；create_access_token(user_id) 用 python-jose jwt.encode({"sub": str(user_id), "exp": ...}, SECRET_KEY, algorithm=ALGORITHM)；decode_access_token(token) 返回 user_id int 或 None；verify_password / hash_password。
+
+7. backend/app/deps.py — get_db；get_current_user（HTTP bearer 可选，无效/缺失 → 401 {"detail":"未登录"}）；get_current_user_optional；require_member(db, current_user)：若用户不存在或（role != "admin" 且 membership 已过期/不存在）→ 403 {"detail":"该内容仅会员可访问"}；require_admin。
+
+8. backend/app/main.py — FastAPI()；CORS middleware（allow_origins=settings.CORS_ORIGINS）；include_router(prefix="/api")：auth、chapters、questions、wrong_favorites、laws、exams、members、site；startup 事件 create_all。
+
+9. backend/app/routers/__init__.py — 空文件。
+
+10. backend/app/routers/auth.py — 实现：
+- POST /auth/register {"phone","password","nickname?"} → 创建用户，返回 {"token":..., "user": {...public fields...}}；手机号重复 → 400 {"detail":"该手机号已注册"}
+- POST /auth/login {"phone","password"} → 校验 → {"token","user"}；失败 → 401 {"detail":"手机号或密码错误"}
+- GET /me → 当前用户 public fields
+- PUT /me/settings {"province_code"?,"nickname"?,"settings"?} → 更新用户（省份/昵称合并进 users；settings 为 JSON dict 原样更新）→ 返回用户
+
+11. backend/app/routers/chapters.py — 实现：
+- GET /chapters?province_code=SC → 返回该省份章节树：顶级章节 parent_id 为 null 的，children 为其子章节列表（递归支持多层）。返回字段 id,name,province_code,sort_order,children[]
+- GET /provinces → 返回支持的省份及是否已开放：[{"code":"SC","name":"四川省","open":true},{"code":"BJ","name":"北京市","open":false},...]
+
+## 其他要求
+- 所有接口返回 JSON；错误统一抛 HTTPException 或 JSONResponse。
+- 不写任何与本次任务范围之外的功能（如考试、法规等后续阶段不在此文件里动）。
+- 代码中注释与常量使用中文。
+- 创建后不要运行任何东西，只需写文件。
+
+完成后回复：列出创建的文件清单，并说明每个文件的职责。
