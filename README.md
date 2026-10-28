@@ -5,12 +5,36 @@
 ## 项目结构
 
 ```
-/
-├── frontend/          # Vue 3 + Vite 前端应用（H5 + PWA）
-├── backend/           # Python FastAPI 后端应用
-├── admin/             # Streamlit 管理后台
-├── docs/              # 项目文档（架构 / 接口 / 数据库 / 开发 / 部署）
-└── docker-compose.yml # 一键部署（前端 + 后端 + 管理后台）
+tiku-page/
+├── backend/                 FastAPI 服务
+│   ├── app/
+│   │   ├── main.py          应用入口（统一挂载 /api）
+│   │   ├── config.py        配置（DATABASE_URL / SECRET_KEY / CORS）
+│   │   ├── database.py      SQLAlchemy engine 与 Session
+│   │   ├── models.py        ORM 模型（13 张表）
+│   │   ├── auth.py          JWT 与密码哈希
+│   │   ├── deps.py          依赖注入（当前用户、会员校验）
+│   │   ├── ratelimit.py     登录 / 激活限流
+│   │   ├── serializers.py   响应序列化（列表接口不下发答案）
+│   │   └── routers/         auth / chapters / questions / exams /
+│   │                        laws / members / site / wrong_favorites
+│   ├── main.py              启动器（uvicorn app.main:app）
+│   ├── seed.py              建表 + 种子数据（幂等，可重复执行）
+│   ├── data/app.db          SQLite 数据文件（已 gitignore，首次运行生成）
+│   └── Dockerfile
+├── frontend/                Vue 3 + Vite SPA（H5 + PWA）
+│   ├── src/
+│   │   ├── api/             9 个接口封装，统一走 /api
+│   │   ├── stores/          auth / ui（Pinia）
+│   │   ├── views/           16 个页面
+│   │   ├── components/      TabBar / Modal / Toast / ProgressBar 等
+│   │   └── styles/          global.css 设计令牌
+│   ├── public/              manifest.webmanifest / sw.js / icon.svg
+│   ├── nginx.conf           生产反代（/api → backend）
+│   └── Dockerfile
+├── admin/                   Streamlit 管理后台
+├── docs/                    架构 / 接口 / 数据库 / 开发 / 部署
+└── docker-compose.yml       一键启动（前端 + 后端 + 管理后台）
 ```
 
 ## 技术栈
@@ -34,7 +58,7 @@
 1. **克隆项目**
 
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/jian1021/tiku-page.git
    cd tiku-page
    ```
 
@@ -107,44 +131,11 @@ docker compose exec backend python seed.py   # 可选，正式环境建议用管
 
 后端 API 文档可在 `http://localhost:8000/docs` 查看（开发环境）。
 
-## 目录结构
+## 升级提示
 
-```
-tiku-page/
-├── backend/                 FastAPI 服务
-│   ├── app/
-│   │   ├── main.py          应用入口（统一挂载 /api）
-│   │   ├── config.py        配置（DATABASE_URL / SECRET_KEY / CORS）
-│   │   ├── database.py      SQLAlchemy engine 与 Session
-│   │   ├── models.py        ORM 模型（13 张表）
-│   │   ├── auth.py          JWT 与密码哈希
-│   │   ├── deps.py          依赖注入（当前用户、会员校验）
-│   │   ├── ratelimit.py     登录/激活限流
-│   │   ├── serializers.py   响应序列化（列表接口不下发答案）
-│   │   └── routers/         auth / chapters / questions / exams /
-│   │                        laws / members / site / wrong_favorites
-│   ├── main.py              启动器（uvicorn app.main:app）
-│   ├── seed.py              建表 + 种子数据（幂等）
-│   ├── data/app.db          SQLite 数据文件（已 gitignore）
-│   └── Dockerfile
-├── frontend/                Vue 3 + Vite SPA
-│   ├── src/
-│   │   ├── api/             9 个接口封装，统一走 /api
-│   │   ├── stores/          auth / ui（Pinia）
-│   │   ├── views/           16 个页面
-│   │   ├── components/      TabBar / Modal / Toast / ProgressBar 等
-│   │   └── styles/          global.css 设计令牌
-│   ├── public/              manifest.webmanifest / sw.js / icon.svg
-│   ├── nginx.conf           生产反代（/api → backend）
-│   └── Dockerfile
-├── admin/                   Streamlit 管理后台
-├── docs/                    架构 / 接口 / 数据库 / 开发 / 部署
-└── docker-compose.yml       backend + frontend + admin 一键启动
-```
-
-> 早期版本的扁平后端（`backend/routers/`、`backend/models.py`）与旧页面
-> （`frontend/src/views/practice|law/`、`frontend/src/stores/{practice,law,exam,settings}.js`）
-> 已全部删除。若从旧提交回溯，请注意其接口与当前后端不兼容。
+早期版本的扁平后端（`backend/routers/`、`backend/models.py`、`backend/database.py`）与旧页面
+（`frontend/src/views/practice|law/`、`frontend/src/stores/{practice,law,exam,settings}.js`）
+已全部删除，入口统一到 `backend/app/` 与 `frontend/src/views/`。若从旧提交回溯，请注意其接口与当前后端不兼容。
 
 ## 许可证
 
