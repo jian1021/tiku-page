@@ -3,13 +3,22 @@ import axios from "axios";
 export const TOKEN_KEY = "sx_token";
 
 /**
+ * 接口基址。
+ *
+ * 开发与 Docker/Nginx 部署：前后端同源，走相对路径 `/api`（Nginx 反代到 backend）。
+ * 前后端分离部署（如前端托管在 Cloudflare Pages、后端在别处）：构建时通过
+ * 环境变量 `VITE_API_BASE` 指定后端地址，例如 `https://api.example.com/api`。
+ */
+const API_BASE = (import.meta.env.VITE_API_BASE || "/api").replace(/\/+$/, "");
+
+/**
  * 统一 axios 实例。
  * - 自动附带登录令牌
  * - 401 时清除本地令牌并广播 auth:unauthorized
  * - 错误信息统一挂到 error.message（优先使用后端 detail）
  */
 export const http = axios.create({
-  baseURL: "/api",
+  baseURL: API_BASE,
   timeout: 15000,
   headers: {
     "Content-Type": "application/json",

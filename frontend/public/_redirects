@@ -1,0 +1,7 @@
+# Cloudflare Pages / Netlify 通用：SPA history 路由回退
+# 前端使用 createWebHistory，直接访问 /quiz、/law/search 等深链时
+# 需要把请求交给 index.html，由 Vue Router 接管。
+#
+# 注意：/api 不在此回退范围内——Pages 上没有后端，
+# 接口请求由 VITE_API_BASE 指向真实后端域名。
+/*    /index.html    200

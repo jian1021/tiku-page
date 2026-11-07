@@ -1,0 +1,23 @@
+# Cloudflare Pages 缓存与安全响应头
+# 语法：路径单独一行，头部缩进两格写在其下方
+
+# SPA 入口不缓存，保证发版后立刻拿到新的 index.html 与哈希资源名
+/index.html
+  Cache-Control: no-cache
+
+# 带内容哈希的静态资源可长期强缓存
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Service Worker 必须每次校验，否则 PWA 会长期停留在旧版本
+/sw.js
+  Cache-Control: no-cache
+
+/manifest.webmanifest
+  Cache-Control: no-cache
+
+# 基础安全头
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: SAMEORIGIN
+  Referrer-Policy: strict-origin-when-cross-origin

@@ -105,7 +105,77 @@ server {
 - [ ] 已配置数据库定期备份
 - [ ] HTTPS 生效，`sw.js` 返回 `Cache-Control: no-cache`
 
-## 5. 手动部署（无 Docker）
+## 5. 前端托管到 Cloudflare Pages（前后端分离）
+
+适用场景：前端放 Cloudflare Pages（免费、全球 CDN、自动 HTTPS），后端 FastAPI 仍跑在 Docker Compose / 云服务器上。
+
+> **前提**：Pages 只能托管 Vite 构建出的静态文件，**不能运行 FastAPI**。数据库与 `/api/*` 接口必须由独立部署的后端提供。Pages 站点上没有 `/api`，因此必须通过环境变量 `VITE_API_BASE` 把接口指向后端的公网地址。
+
+### 5.1 后端准备
+
+后端先对外提供 HTTPS 地址（如 `https://api.example.com`），然后把 Pages 域名加入白名单：
+
+```bash
+# backend/.env
+CORS_ORIGINS=https://tiku-page.pages.dev
+# 每次 PR 的预览域名是随机子域，用正则一次覆盖
+CORS_ORIGIN_REGEX=https://.*\.tiku-page\.pages\.dev
+```
+
+改完重启后端。未配置时前端会报 `blocked by CORS policy`。
+
+### 5.2 在 Cloudflare 后台创建项目
+
+Workers & Pages → Create → Pages → Connect to Git → 选择仓库 `jian1021/tiku-page`。
+
+构建参数：
+
+| 配置项 | 值 |
+| --- | --- |
+| Framework preset | `Vue` |
+| Root directory | `frontend` |
+| Build command | `npm run build` |
+| Build output directory | `dist` |
+| 环境变量 `VITE_API_BASE` | `https://api.example.com/api` |
+| 环境变量 `NODE_VERSION` | `20` |
+
+仓库里已备好构建所需的配套文件，无需额外配置：
+
+- `frontend/public/_redirects`：`/* /index.html 200`，解决 history 模式深链刷新 404
+- `frontend/public/_headers`：`/assets/*` 强缓存、`sw.js` 与 `index.html` 不缓存
+- `frontend/wrangler.toml`：命令行部署时指定项目名与产物目录
+
+### 5.3 命令行部署（可选）
+
+不想接 Git 自动构建时：
+
+```bash
+cd frontend
+npm ci
+VITE_API_BASE=https://api.example.com/api npm run build
+npx wrangler pages deploy      # 首次会要求 wrangler login 授权
+```
+
+### 5.4 上线校验
+
+- [ ] 首页可打开，直接访问 `/law/search` 并刷新不 404（`_redirects` 生效）
+- [ ] 浏览器 Network 中接口请求域名是后端地址，不再是 Pages 域名
+- [ ] `curl -I https://<项目>.pages.dev/sw.js` 返回 `Cache-Control: no-cache`
+- [ ] 能登录、能看到题库（说明后端已执行过 `seed.py`）
+
+### 5.5 题库数据不在 Pages 里
+
+Pages 产物只含前端代码，**105 道 2026 四川真题在后端数据库里**。后端首次部署后执行：
+
+```bash
+cd backend
+python seed.py                 # 建表 + 示例数据 + 自动导入题库
+# 或只做题库增量导入
+python import_papers.py --dry-run
+python import_papers.py
+```
+
+## 6. 手动部署（无 Docker）
 
 ```bash
 # 后端
@@ -138,7 +208,7 @@ Restart=always
 WantedBy=multi-user.target
 ```
 
-## 6. 升级与回滚
+## 7. 升级与回滚
 
 ```bash
 git pull
@@ -149,7 +219,7 @@ docker compose up -d --build       # 重建镜像，数据卷不受影响
 - 如涉及表结构变更，需在发布前执行迁移脚本；当前项目未启用 Alembic 版本管理，结构调整请先在测试库验证。
 - 回滚：`git checkout <上一个版本 tag>` 后重新 `docker compose up -d --build`，并按需恢复数据库备份。
 
-## 7. 监控与日志
+## 8. 监控与日志
 
 - 健康检查：`curl http://127.0.0.1:8080/api/../health` 不经过代理，建议直接 `docker compose exec backend python -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/health').read())"`。
 - 日志：`docker compose logs -f --tail=200 backend`。

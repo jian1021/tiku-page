@@ -1,0 +1,7 @@
+# Cloudflare Pages 项目配置
+# 仅在用命令行部署（wrangler pages deploy）时需要；
+# 在 Cloudflare 后台「连接到 Git」的方式不需要本文件。
+
+name = "tiku-page"
+compatibility_date = "2026-11-01"
+pages_build_output_dir = "dist"
