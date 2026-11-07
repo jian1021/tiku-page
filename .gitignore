@@ -26,3 +26,6 @@ backend/data/*.sqlite3
 
 # Vite 临时文件
 frontend/vite.config.js.timestamp-*
+
+# 本地数据库备份
+*.db.bak*

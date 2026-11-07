@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # 只用 app 包这一套模型，避免误用旧版扁平模块（backend/models.py）建出另一套元数据
 from app.auth import hash_password, verify_password
 from app.database import Base, SessionLocal, engine
+from app.paper_importer import import_papers
 from app.models import (
     ActivationCode,
     Chapter,
@@ -499,12 +500,20 @@ def seed() -> None:
         _seed_site_configs(db)
         _seed_exam_configs(db)
 
+        # 内置题库（两套 2026 年练习题，幂等写入）
+        papers_stats = import_papers(db, province_code="SC")
+
         db.commit()
         print("种子数据写入完成。")
         print(f"管理员账号：{admin.phone} / admin123")
         print("测试账号：13800138000 / test1234（未激活）")
         print("测试账号：13900139000 / test1234（已开通 30 天会员）")
         print("示例激活码：DEMO-30D-0001、DEMO-7D-0001、DEMO-DISABLED")
+        print(
+            "内置题库："
+            f"新增 {papers_stats['questions_created']} 题，"
+            f"跳过已存在 {papers_stats['questions_skipped']} 题"
+        )
     except Exception:
         db.rollback()
         raise

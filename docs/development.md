@@ -29,7 +29,22 @@ python main.py
 
 生产或不需热重载时：`RELOAD=0 python main.py`。
 
-> 题库导入脚本需要 pandas / pdfplumber 等，额外执行 `pip install -r requirements-tools.txt`。
+### 题库导入
+
+内置题库（两套 2026 年四川省练习题，共 105 题）在 `python seed.py` 时会自动写入。
+单独导入或后续更新题目：
+
+```bash
+python import_papers.py                  # 幂等导入，已存在的题目自动跳过
+python import_papers.py --dry-run        # 只统计不落库
+python import_papers.py --province SC    # 指定省份
+```
+
+题目数据在 `backend/app/fixtures/`，按「章节 → 题目」组织成纯 Python 数据，
+新增套题只需加一个模块并在 `fixtures/papers.py` 中登记。
+
+> 若要从 PDF / Excel 批量抽取题目，再额外执行 `pip install -r requirements-tools.txt`
+> 安装 pandas / pdfplumber 等解析库；`import_papers.py` 本身只用运行时依赖。
 
 ## 3. 启动前端
 

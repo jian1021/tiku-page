@@ -16,10 +16,13 @@ tiku-page/
 │   │   ├── deps.py          依赖注入（当前用户、会员校验）
 │   │   ├── ratelimit.py     登录 / 激活限流
 │   │   ├── serializers.py   响应序列化（列表接口不下发答案）
+│   │   ├── paper_importer.py 内置题库导入逻辑（幂等）
+│   │   ├── fixtures/        内置题库数据（2 套 2026 练习题，105 题）
 │   │   └── routers/         auth / chapters / questions / exams /
 │   │                        laws / members / site / wrong_favorites
 │   ├── main.py              启动器（uvicorn app.main:app）
-│   ├── seed.py              建表 + 种子数据（幂等，可重复执行）
+│   ├── seed.py              建表 + 种子数据（幂等，含题库导入）
+│   ├── import_papers.py     单独导入/更新题库
 │   ├── data/app.db          SQLite 数据文件（已 gitignore，首次运行生成）
 │   └── Dockerfile
 ├── frontend/                Vue 3 + Vite SPA（H5 + PWA）
@@ -68,8 +71,9 @@ tiku-page/
    cd backend
    python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
    pip install -r requirements.txt
-   python seed.py       # 首次运行：写入示例账号、章节、题目与法规
-   python main.py       # 默认 http://localhost:8000
+   python seed.py            # 首次运行：示例账号、章节、法规 + 内置题库（105 题）
+   python import_papers.py   # 后续单独更新题库（幂等，已存在题目跳过）
+   python main.py            # 默认 http://localhost:8000
    ```
 
 3. **启动前端**
